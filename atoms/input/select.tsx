@@ -2,6 +2,8 @@ import * as React from 'react'
 import Select, { SelectProps } from '@material-ui/core/Select'
 import MenuItem, { MenuItemProps } from '@material-ui/core/MenuItem'
 import styled from 'styled-components'
+import { OutlinedInput } from './'
+import { InputLabel } from './'
 
 export const WrappedSelect = styled(
   React.forwardRef((props: SelectProps, ref: React.Ref<any>) => {
@@ -15,3 +17,39 @@ export const WrappedMenuItem = styled(
     return <MenuItem {...props} ref={ref} />
   })
 )<MenuItemProps>``
+
+export const OutlinedSelect = styled(
+  React.forwardRef(
+    (props: SelectProps & { label: string }, ref: React.Ref<any>) => {
+      const inputLabel = React.useRef<any>(null)
+      const [labelWidth, setLabelWidth] = React.useState(0)
+
+      React.useEffect(() => {
+        if (inputLabel !== null) {
+          setLabelWidth(inputLabel.current!.offsetWidth)
+        }
+      }, [])
+
+      return (
+        <>
+          <InputLabel ref={inputLabel} htmlFor={props.name}>
+            {props.label}
+          </InputLabel>
+          <Select
+            {...props}
+            input={
+              <OutlinedInput
+                margin={props.margin}
+                labelWidth={labelWidth}
+                name={props.name}
+              />
+            }
+            ref={ref}
+          >
+            {props.children}
+          </Select>
+        </>
+      )
+    }
+  )
+)<SelectProps & { label: string }>``
