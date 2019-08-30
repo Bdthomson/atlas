@@ -2,8 +2,7 @@ import * as React from 'react'
 import Select, { SelectProps } from '@material-ui/core/Select'
 import MenuItem, { MenuItemProps } from '@material-ui/core/MenuItem'
 import styled from 'styled-components'
-import { OutlinedInput } from './'
-import InputLabel from '@material-ui/core/InputLabel'
+import { OutlinedInput, InputLabel } from './'
 
 export const WrappedSelect = styled(
   React.forwardRef((props: SelectProps, ref: React.Ref<any>) => {
