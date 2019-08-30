@@ -18,53 +18,26 @@ export const WrappedMenuItem = styled(
   })
 )<MenuItemProps>``
 
-// @ts-ignore
-const PaddedLabel = styled<{ margin: string }, 'InputLabel'>(InputLabel)`
-  transform: ${(props: any) =>
-    props.margin === 'dense' ? 'translate(14px, 10px) scale(1)' : 'none'};
-`
-
-const PaddedSelect = styled(Select)`
-  min-width: 100px;
-
-  .MuiOutlinedInput-inputMarginDense {
-    padding-bottom: 6.5px;
-  }
-`
 export const OutlinedSelect = styled(
   React.forwardRef(
     (props: SelectProps & { label: string }, ref: React.Ref<any>) => {
-      const inputLabel = React.useRef<any>(null)
+      const inputLabelRef = React.useRef<any>(null)
       const [labelWidth, setLabelWidth] = React.useState(0)
 
       React.useEffect(() => {
-        if (inputLabel !== null) {
-          setLabelWidth(inputLabel.current!.offsetWidth)
-        }
+        setLabelWidth(inputLabelRef.current!.offsetWidth)
       }, [])
 
       return (
         <>
-          <PaddedLabel
-            ref={inputLabel}
-            htmlFor={props.name}
-            margin={props.margin}
-          >
-            {props.label}
-          </PaddedLabel>
-          <PaddedSelect
+          <InputLabel ref={inputLabelRef}>{props.label}</InputLabel>
+          <Select
             {...props}
-            input={
-              <OutlinedInput
-                margin={props.margin}
-                labelWidth={labelWidth}
-                name={props.name}
-              />
-            }
+            input={<OutlinedInput labelWidth={labelWidth} />}
             ref={ref}
           >
             {props.children}
-          </PaddedSelect>
+          </Select>
         </>
       )
     }
