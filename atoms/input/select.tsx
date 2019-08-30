@@ -3,7 +3,7 @@ import Select, { SelectProps } from '@material-ui/core/Select'
 import MenuItem, { MenuItemProps } from '@material-ui/core/MenuItem'
 import styled from 'styled-components'
 import { OutlinedInput } from './'
-import { InputLabel } from './'
+import InputLabel from '@material-ui/core/InputLabel'
 
 export const WrappedSelect = styled(
   React.forwardRef((props: SelectProps, ref: React.Ref<any>) => {
@@ -18,6 +18,19 @@ export const WrappedMenuItem = styled(
   })
 )<MenuItemProps>``
 
+// @ts-ignore
+const PaddedLabel = styled<{ margin: string }, 'InputLabel'>(InputLabel)`
+  transform: ${(props: any) =>
+    props.margin === 'dense' ? 'translate(14px, 10px) scale(1)' : 'none'};
+`
+
+const PaddedSelect = styled(Select)`
+  min-width: 100px;
+
+  .MuiOutlinedInput-inputMarginDense {
+    padding-bottom: 6.5px;
+  }
+`
 export const OutlinedSelect = styled(
   React.forwardRef(
     (props: SelectProps & { label: string }, ref: React.Ref<any>) => {
@@ -32,10 +45,14 @@ export const OutlinedSelect = styled(
 
       return (
         <>
-          <InputLabel ref={inputLabel} htmlFor={props.name}>
+          <PaddedLabel
+            ref={inputLabel}
+            htmlFor={props.name}
+            margin={props.margin}
+          >
             {props.label}
-          </InputLabel>
-          <Select
+          </PaddedLabel>
+          <PaddedSelect
             {...props}
             input={
               <OutlinedInput
@@ -47,7 +64,7 @@ export const OutlinedSelect = styled(
             ref={ref}
           >
             {props.children}
-          </Select>
+          </PaddedSelect>
         </>
       )
     }
