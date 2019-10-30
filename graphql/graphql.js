@@ -8,7 +8,7 @@ import fetch from './fetch'
 
 const ROOT = '/search/catalog/internal'
 
-import genSchema, { toGraphqlName, fromGraphqlName } from './gen-schema'
+import { generateSchemaFromMetacardTypes } from './gen-schema'
 
 const getBuildInfo = () => {
   /* eslint-disable */
@@ -50,29 +50,16 @@ const renameKeys = (f, map) => {
   }, {})
 }
 
-const toGraphqlMap = map => {
-  return Object.keys(map).reduce((attrs, attr) => {
-    const name = toGraphqlName(attr)
-    attrs[name] = map[attr]
-    return attrs
-  }, {})
-}
-
-const fromGraphqlMap = map => {
-  return Object.keys(map).reduce((attrs, attr) => {
-    const name = fromGraphqlName(attr)
-    attrs[name] = map[attr]
-    return attrs
-  }, {})
-}
-
-const metacards = async (ctx, args) => {
+const metacards = mappers => async (ctx, args) => {
+  console.log('Called metacards')
   const q = { ...args.settings, filterTree: args.filterTree }
   const req = send(q)
   const json = await req.json()
 
+  debugger
+
   const attributes = json.results.map(result =>
-    toGraphqlMap(result.metacard.properties)
+    mappers.toGraphqlMap(result.metacard.properties)
   )
 
   return { attributes, ...json }
@@ -118,12 +105,14 @@ const fetchQueryTemplates = async () => {
   return { attributes, status }
 }
 
-const metacardsByTag = async (ctx, args) => {
+const metacardsByTag = mappers => async (ctx, args) => {
   if (args.tag === 'query-template') {
     return fetchQueryTemplates()
   }
 
-  return metacards(ctx, {
+  console.log('Called metacardsByTag')
+
+  return metacards(mappers)(ctx, {
     filterTree: {
       type: '=',
       property: 'metacard-tags',
@@ -175,23 +164,23 @@ const metacardTypes = async () => {
   return Object.keys(types).map(k => types[k])
 }
 
-const Query = {
+const Query = mappers => ({
+  metacards: metacards(mappers),
+  metacardsByTag: metacardsByTag(mappers),
   user,
   sources,
-  metacards,
-  metacardsByTag,
   metacardById,
-  metacardTypes,
   systemProperties,
-}
+  metacardTypes,
+})
 
-const createMetacard = async (parent, args) => {
+const createMetacard = mappers => async (parent, args) => {
   const { attrs } = args
 
   const body = {
     geometry: null,
     type: 'Feature',
-    properties: fromGraphqlMap(attrs),
+    properties: mappers.fromGraphqlMap(attrs),
   }
 
   const res = await fetch(`${ROOT}/catalog/`, {
@@ -210,7 +199,7 @@ const createMetacard = async (parent, args) => {
   const created = new Date().toISOString()
   const modified = created
 
-  const mapToReturn = toGraphqlMap({
+  const mapToReturn = mappers.toGraphqlMap({
     ...attrs,
     id,
     created: created,
@@ -224,13 +213,13 @@ const createMetacard = async (parent, args) => {
   return mapToReturn
 }
 
-const saveMetacard = async (parent, args) => {
+const saveMetacard = mappers => async (parent, args) => {
   const { id, attrs } = args
 
   const attributes = Object.keys(attrs).map(attribute => {
     const value = attrs[attribute]
     return {
-      attribute: fromGraphqlName(attribute),
+      attribute: mappers.fromGraphqlName(attribute),
       values: Array.isArray(value) ? value : [value],
     }
   })
@@ -255,7 +244,7 @@ const saveMetacard = async (parent, args) => {
   }
 
   const modified = new Date().toISOString()
-  return toGraphqlMap({
+  return mappers.toGraphqlMap({
     __typename: 'MetacardAttributes',
     id,
     'metacard.modified': modified,
@@ -275,27 +264,52 @@ const deleteMetacard = async (parent, args) => {
   }
 }
 
-const Mutation = {
-  createMetacard,
-  saveMetacard,
+const Mutation = mappers => ({
+  createMetacard: createMetacard(mappers),
+  saveMetacard: saveMetacard(mappers),
+  createMetacardFromJson: createMetacard(mappers),
+  saveMetacardFromJson: saveMetacard(mappers),
   deleteMetacard,
-  createMetacardFromJson: createMetacard,
-  saveMetacardFromJson: saveMetacard,
-}
+})
 
-const resolvers = {
-  Query,
-  Mutation,
-}
-
-const executableSchema = makeExecutableSchema({
-  typeDefs: genSchema(),
-  resolvers,
+const resolvers = mappers => ({
+  Query: Query(mappers),
+  Mutation: Mutation(mappers),
 })
 
 const cache = new InMemoryCache()
 
-export const createClient = () => {
+export const createClient = async extendedSchema => {
+  const types = await metacardTypes()
+  console.log('Metacard Types: ', types)
+  const schema = generateSchemaFromMetacardTypes(extendedSchema, types)
+
+  const toGraphqlMap = map => {
+    return Object.keys(map).reduce((attrs, attr) => {
+      const name = schema.toGraphqlName(attr)
+      attrs[name] = map[attr]
+      return attrs
+    }, {})
+  }
+
+  const fromGraphqlMap = map => {
+    return Object.keys(map).reduce((attrs, attr) => {
+      const name = schema.fromGraphqlName(attr)
+      attrs[name] = map[attr]
+      return attrs
+    }, {})
+  }
+
+  const mappers = {
+    fromGraphqlMap,
+    toGraphqlMap,
+  }
+
+  const executableSchema = makeExecutableSchema({
+    typeDefs: schema.definitions,
+    resolvers: resolvers(mappers),
+  })
+
   return new ApolloClient({
     link: new SchemaLink({ schema: executableSchema }),
     cache,
