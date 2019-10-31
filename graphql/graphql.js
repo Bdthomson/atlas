@@ -50,32 +50,13 @@ const renameKeys = (f, map) => {
   }, {})
 }
 
-export const metacards = middleware => async (ctx, args) => {
-  console.log('Called metacards')
+export const metacards = async (parent, args, context) => {
   const q = { ...args.settings, filterTree: args.filterTree }
   const req = send(q)
   const json = await req.json()
 
   const attributes = json.results.map(result => {
-    const properties = middleware.toGraphqlMap(result.metacard.properties)
-    const customResolvers = Object.keys(middleware.resolvers).reduce(
-      (cr, r) => {
-        console.log('CR: ', cr)
-        console.log('R: ', r)
-        cr[r] = middleware.resolvers[r](properties)
-        return cr
-      },
-      {}
-    )
-
-    const allResolvers = {
-      ...properties,
-      ...customResolvers,
-    }
-
-    console.log('All Resolvers: ', allResolvers)
-
-    return allResolvers
+    return context.toGraphqlMap(result.metacard.properties)
   })
 
   return { attributes, ...json }
@@ -121,15 +102,19 @@ const fetchQueryTemplates = async () => {
   return { attributes, status }
 }
 
-export const metacardsByTag = metacards => async (ctx, args) => {
-  return metacards(ctx, {
-    filterTree: {
-      type: '=',
-      property: 'metacard-tags',
-      value: args.tag,
+export const metacardsByTag = async (parent, args, context) => {
+  return metacards(
+    parent,
+    {
+      filterTree: {
+        type: '=',
+        property: 'metacard-tags',
+        value: args.tag,
+      },
+      settings: args.settings,
     },
-    settings: args.settings,
-  })
+    context
+  )
 }
 
 const metacardById = async (ctx, args) => {
@@ -153,18 +138,18 @@ const metacardById = async (ctx, args) => {
   })
 }
 
-export const user = async (parent, args, context) => {
+const user = async (parent, args, context) => {
   console.log('Context: ', context)
   const res = await fetch(`${ROOT}/user`)
   return res.json()
 }
 
-export const sources = async () => {
+const sources = async () => {
   const res = await fetch(`${ROOT}/catalog/sources`)
   return res.json()
 }
 
-export const metacardTypes = async () => {
+const metacardTypes = async () => {
   const res = await fetch(`${ROOT}/metacardtype`)
   const json = await res.json()
 
@@ -175,7 +160,7 @@ export const metacardTypes = async () => {
   return Object.keys(types).map(k => types[k])
 }
 
-const Query = {
+export const Query = {
   metacards,
   metacardsByTag,
   user,
@@ -185,7 +170,7 @@ const Query = {
   metacardTypes,
 }
 
-export const createMetacard = async (parent, args, context) => {
+const createMetacard = async (parent, args, context) => {
   const { attrs } = args
 
   const body = {
@@ -224,13 +209,13 @@ export const createMetacard = async (parent, args, context) => {
   return mapToReturn
 }
 
-const saveMetacard = mappers => async (parent, args) => {
+const saveMetacard = async (parent, args, context) => {
   const { id, attrs } = args
 
   const attributes = Object.keys(attrs).map(attribute => {
     const value = attrs[attribute]
     return {
-      attribute: mappers.fromGraphqlName(attribute),
+      attribute: context.fromGraphqlName(attribute),
       values: Array.isArray(value) ? value : [value],
     }
   })
@@ -255,7 +240,7 @@ const saveMetacard = mappers => async (parent, args) => {
   }
 
   const modified = new Date().toISOString()
-  return mappers.toGraphqlMap({
+  return context.toGraphqlMap({
     __typename: 'MetacardAttributes',
     id,
     'metacard.modified': modified,
@@ -263,7 +248,7 @@ const saveMetacard = mappers => async (parent, args) => {
   })
 }
 
-export const deleteMetacard = async (parent, args) => {
+const deleteMetacard = async (parent, args) => {
   const { id } = args
 
   const res = await fetch(`${ROOT}/catalog/${id}`, {
@@ -275,7 +260,7 @@ export const deleteMetacard = async (parent, args) => {
   }
 }
 
-const Mutation = {
+export const Mutation = {
   createMetacard,
   saveMetacard,
   createMetacardFromJson: createMetacard,
@@ -315,12 +300,11 @@ export const createClient = (schema, resolvers) => {
 
   const executableSchema = makeExecutableSchema({
     typeDefs: schema.definitions,
-    resolvers: resolvers(mappers),
+    resolvers,
   })
 
   return new ApolloClient({
-    link: new SchemaLink({ schema: executableSchema }),
+    link: new SchemaLink({ schema: executableSchema, context }),
     cache,
-    context,
   })
 }

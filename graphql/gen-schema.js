@@ -1,18 +1,3 @@
-import attributes from './attributes'
-
-import baseSchema from 'raw-loader!./base.schema.graphql'
-
-export const toGraphqlName = name => name.replace(/-|\./g, '_')
-
-const idMap = attributes
-  .map(a => a.id)
-  .reduce((map, id) => {
-    map[toGraphqlName(id)] = id
-    return map
-  }, {})
-
-export const fromGraphqlName = name => idMap[name] || name
-
 // DDF types -> GraphQL types
 const typeMap = {
   STRING: 'String',
@@ -29,54 +14,21 @@ const typeMap = {
   JSON: 'Json',
 }
 
-const attrs = attributes
-  .map(attr => {
-    const { id, multivalued, type } = attr
-    const name = toGraphqlName(id)
-    let graphQLType = typeMap[type]
-
-    if (!graphQLType) {
-      console.warn('Could not find graphql type match for ', type)
-    }
-
-    if (multivalued) {
-      graphQLType = `[${graphQLType}]`
-    }
-
-    return `  # metacard attribute: **\`${id}\`**\n  ${name}: ${graphQLType}`
-  })
-  .join('\n')
-
-const gen = () => {
-  return `
-  scalar Json
-  # Binary content embedded as a base64 String
-  scalar Binary
-  # WKT embedded as a String
-  scalar Geometry
-  # XML embedded as a String
-  scalar XML
-  # ISO 8601 Data Time embedded as a String
-  scalar Date
-
-  # Common and well known metacard attributes intended for progrmatic usage
-  type MetacardAttributes {
-  ${attrs}
+const getBaseSchema = () => {
+  if (typeof window === 'undefined') {
+    // prevent webpack from resolving fs/path which is only required for node
+    const r = eval('require')
+    const fs = r('fs')
+    const path = r('path')
+    const schema = path.join(__dirname, 'base.schema.graphql')
+    return fs.readFileSync(schema)
+  } else {
+    return require('raw-loader!./base.schema.graphql')
   }
-
-  input MetacardAttributesInput {
-  ${attrs}
-  }
-
-  ${baseSchema}
-
-  `
 }
 
-export const generateSchemaFromMetacardTypes = (
-  extendedSchema,
-  metacardTypes
-) => {
+const generateSchemaFromMetacardTypes = (extendedSchema, metacardTypes) => {
+  const toGraphqlName = name => name.replace(/-|\./g, '_')
   const attrs = metacardTypes
   const idMap = attrs
     .map(a => a.id)
@@ -126,7 +78,7 @@ export const generateSchemaFromMetacardTypes = (
   ${customAttrs(true)}
   }
 
-  ${baseSchema}
+  ${getBaseSchema()}
   `
 
   if (extendedSchema) {
@@ -137,8 +89,10 @@ export const generateSchemaFromMetacardTypes = (
     `
   }
 
-  window.logSchema = () => {
-    console.log(schema)
+  if (typeof window !== 'undefined') {
+    window.logSchema = () => {
+      console.log(schema)
+    }
   }
 
   return {
@@ -148,4 +102,6 @@ export const generateSchemaFromMetacardTypes = (
   }
 }
 
-export default gen
+module.exports = {
+  generateSchemaFromMetacardTypes,
+}
