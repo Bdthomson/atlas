@@ -26,6 +26,7 @@ const typeMap = {
   GEOMETRY: 'Geometry',
   XML: 'XML',
   DATE: 'Date',
+  JSON: 'Json',
 }
 
 const attrs = attributes
@@ -86,23 +87,24 @@ export const generateSchemaFromMetacardTypes = (
 
   const fromGraphqlName = name => idMap[name] || name
 
-  const customAttrs = attrs
-    .map(attr => {
-      const { id, multivalued, type } = attr
-      const name = toGraphqlName(id)
-      let graphQLType = typeMap[type]
+  const customAttrs = input =>
+    attrs
+      .map(attr => {
+        const { id, multivalued, type } = attr
+        const name = toGraphqlName(id)
+        let graphQLType = typeMap[type] || type + (input ? 'Input' : '')
 
-      if (!graphQLType) {
-        console.warn('Could not find graphql type match for ', type)
-      }
+        if (!graphQLType) {
+          console.warn('Could not find graphql type match for ', type)
+        }
 
-      if (multivalued) {
-        graphQLType = `[${graphQLType}]`
-      }
+        if (multivalued) {
+          graphQLType = `[${graphQLType}]`
+        }
 
-      return `  # metacard attribute: **\`${id}\`**\n  ${name}: ${graphQLType}`
-    })
-    .join('\n')
+        return `  # metacard attribute: **\`${id}\`**\n  ${name}: ${graphQLType}`
+      })
+      .join('\n')
 
   let schema = `
   scalar Json
@@ -117,11 +119,11 @@ export const generateSchemaFromMetacardTypes = (
 
   # Common and well known metacard attributes intended for progrmatic usage
   type MetacardAttributes {
-  ${customAttrs}
+  ${customAttrs()}
   }
 
   input MetacardAttributesInput {
-  ${customAttrs}
+  ${customAttrs(true)}
   }
 
   ${baseSchema}

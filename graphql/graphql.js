@@ -26,7 +26,7 @@ const getBuildInfo = () => {
   }
 }
 
-const systemProperties = async () => {
+export const systemProperties = async () => {
   const [configProperties, configUiProperties] = await Promise.all([
     (await fetch(`${ROOT}/config`)).json(),
     (await fetch(`${ROOT}/platform/config/ui`)).json(),
@@ -38,7 +38,7 @@ const systemProperties = async () => {
   }
 }
 
-const { send } = createTransport({
+export const { send } = createTransport({
   pathname: ROOT,
 })
 
@@ -50,17 +50,33 @@ const renameKeys = (f, map) => {
   }, {})
 }
 
-const metacards = mappers => async (ctx, args) => {
+export const metacards = middleware => async (ctx, args) => {
   console.log('Called metacards')
   const q = { ...args.settings, filterTree: args.filterTree }
   const req = send(q)
   const json = await req.json()
 
-  debugger
+  const attributes = json.results.map(result => {
+    const properties = middleware.toGraphqlMap(result.metacard.properties)
+    const customResolvers = Object.keys(middleware.resolvers).reduce(
+      (cr, r) => {
+        console.log('CR: ', cr)
+        console.log('R: ', r)
+        cr[r] = middleware.resolvers[r](properties)
+        return cr
+      },
+      {}
+    )
 
-  const attributes = json.results.map(result =>
-    mappers.toGraphqlMap(result.metacard.properties)
-  )
+    const allResolvers = {
+      ...properties,
+      ...customResolvers,
+    }
+
+    console.log('All Resolvers: ', allResolvers)
+
+    return allResolvers
+  })
 
   return { attributes, ...json }
 }
@@ -105,14 +121,8 @@ const fetchQueryTemplates = async () => {
   return { attributes, status }
 }
 
-const metacardsByTag = mappers => async (ctx, args) => {
-  if (args.tag === 'query-template') {
-    return fetchQueryTemplates()
-  }
-
-  console.log('Called metacardsByTag')
-
-  return metacards(mappers)(ctx, {
+export const metacardsByTag = metacards => async (ctx, args) => {
+  return metacards(ctx, {
     filterTree: {
       type: '=',
       property: 'metacard-tags',
@@ -143,17 +153,18 @@ const metacardById = async (ctx, args) => {
   })
 }
 
-const user = async () => {
+export const user = async (parent, args, context) => {
+  console.log('Context: ', context)
   const res = await fetch(`${ROOT}/user`)
   return res.json()
 }
 
-const sources = async () => {
+export const sources = async () => {
   const res = await fetch(`${ROOT}/catalog/sources`)
   return res.json()
 }
 
-const metacardTypes = async () => {
+export const metacardTypes = async () => {
   const res = await fetch(`${ROOT}/metacardtype`)
   const json = await res.json()
 
@@ -164,23 +175,23 @@ const metacardTypes = async () => {
   return Object.keys(types).map(k => types[k])
 }
 
-const Query = mappers => ({
-  metacards: metacards(mappers),
-  metacardsByTag: metacardsByTag(mappers),
+const Query = {
+  metacards,
+  metacardsByTag,
   user,
   sources,
   metacardById,
   systemProperties,
   metacardTypes,
-})
+}
 
-const createMetacard = mappers => async (parent, args) => {
+export const createMetacard = async (parent, args, context) => {
   const { attrs } = args
 
   const body = {
     geometry: null,
     type: 'Feature',
-    properties: mappers.fromGraphqlMap(attrs),
+    properties: context.fromGraphqlMap(attrs),
   }
 
   const res = await fetch(`${ROOT}/catalog/`, {
@@ -199,7 +210,7 @@ const createMetacard = mappers => async (parent, args) => {
   const created = new Date().toISOString()
   const modified = created
 
-  const mapToReturn = mappers.toGraphqlMap({
+  const mapToReturn = context.toGraphqlMap({
     ...attrs,
     id,
     created: created,
@@ -252,7 +263,7 @@ const saveMetacard = mappers => async (parent, args) => {
   })
 }
 
-const deleteMetacard = async (parent, args) => {
+export const deleteMetacard = async (parent, args) => {
   const { id } = args
 
   const res = await fetch(`${ROOT}/catalog/${id}`, {
@@ -264,26 +275,22 @@ const deleteMetacard = async (parent, args) => {
   }
 }
 
-const Mutation = mappers => ({
-  createMetacard: createMetacard(mappers),
-  saveMetacard: saveMetacard(mappers),
-  createMetacardFromJson: createMetacard(mappers),
-  saveMetacardFromJson: saveMetacard(mappers),
+const Mutation = {
+  createMetacard,
+  saveMetacard,
+  createMetacardFromJson: createMetacard,
+  saveMetacardFromJson: saveMetacard,
   deleteMetacard,
-})
+}
 
-const resolvers = mappers => ({
-  Query: Query(mappers),
-  Mutation: Mutation(mappers),
-})
+const baseResolvers = {
+  Query,
+  Mutation,
+}
 
 const cache = new InMemoryCache()
 
-export const createClient = async extendedSchema => {
-  const types = await metacardTypes()
-  console.log('Metacard Types: ', types)
-  const schema = generateSchemaFromMetacardTypes(extendedSchema, types)
-
+export const createClient = (schema, resolvers) => {
   const toGraphqlMap = map => {
     return Object.keys(map).reduce((attrs, attr) => {
       const name = schema.toGraphqlName(attr)
@@ -300,7 +307,8 @@ export const createClient = async extendedSchema => {
     }, {})
   }
 
-  const mappers = {
+  // TODO: How to get around having to pass this in to each function invocation
+  const context = {
     fromGraphqlMap,
     toGraphqlMap,
   }
@@ -313,5 +321,6 @@ export const createClient = async extendedSchema => {
   return new ApolloClient({
     link: new SchemaLink({ schema: executableSchema }),
     cache,
+    context,
   })
 }
